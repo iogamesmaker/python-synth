@@ -20,6 +20,7 @@ class SynthesizerApp(tk.Tk):
         self.project_modified = False
         self.is_playing = False
         self.is_recording = False
+        self.control_panel_visible = True
 
         # Initialize audio components
         self.synth = Synthesizer()
@@ -36,26 +37,28 @@ class SynthesizerApp(tk.Tk):
         self.content_frame = ttk.Frame(self.main_frame)
         self.content_frame.pack(fill='both', expand=True)
 
-        # Create horizontal paned window for keyboard and note roll
+        # Create horizontal paned window for keyboard+control and note roll
         self.horizontal_paned = ttk.PanedWindow(self.content_frame, orient='horizontal')
         self.horizontal_paned.pack(fill='both', expand=True)
 
-        # Create vertical frame for keyboard and control panel
-        self.left_panel = ttk.Frame(self.horizontal_paned)
+        # Create left panel with fixed width
+        self.left_panel = ttk.Frame(self.horizontal_paned, width=250)
+        self.left_panel.pack_propagate(False)
 
-        # Create keyboard in left panel
+        # Create keyboard
         self.keyboard = PianoKeyboard(self.left_panel, self.play_note)
-        self.keyboard.pack(fill='y', expand=True, side='left')
+        self.keyboard.pack(side='left', fill='y')
 
-        # Create control panel in left panel
+        # Create control panel
+        self.control_panel = ttk.Frame(self.left_panel)
         self.create_control_panel()
 
-        # Create note roll on the right
+        # Create note roll
         self.note_roll = NoteRoll(self.horizontal_paned, self.synth)
 
-        # Add panels to PanedWindow with weights
-        self.horizontal_paned.add(self.left_panel, weight=1)
-        self.horizontal_paned.add(self.note_roll, weight=3)
+        # Add panels to PanedWindow (only add once!)
+        self.horizontal_paned.add(self.left_panel)
+        self.horizontal_paned.add(self.note_roll, weight=1)
 
         # Create status bar at the bottom
         self.create_status_bar()
@@ -66,7 +69,7 @@ class SynthesizerApp(tk.Tk):
         # Set window minimum size
         self.minsize(1200, 800)
 
-        # Configure minimum sizes using sashpos after the window is created
+        # Configure pane sizes after window is created
         self.after(100, self.configure_panes)
 
         # Bind events
@@ -112,8 +115,11 @@ class SynthesizerApp(tk.Tk):
         view_menu.add_command(label="Zoom In", command=lambda: self.note_roll.zoom_in())
         view_menu.add_command(label="Zoom Out", command=lambda: self.note_roll.zoom_out())
         view_menu.add_separator()
-        view_menu.add_checkbutton(label="Show Control Panel",
-                                command=self.toggle_control_panel)
+        view_menu.add_checkbutton(
+            label="Show Control Panel",
+            command=self.toggle_control_panel,
+            variable=tk.BooleanVar(value=self.control_panel_visible)
+        )
 
         # Help menu
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
@@ -162,8 +168,9 @@ class SynthesizerApp(tk.Tk):
         self.master_volume.pack(side='left', padx=2)
 
     def create_control_panel(self):
-        self.control_panel = ttk.Frame(self.horizontal_paned)
-        self.horizontal_paned.add(self.control_panel, weight=1)
+        """Create the control panel widgets."""
+        # Make sure control panel is packed properly
+        self.control_panel.pack(side='right', fill='both', expand=True)
 
         # Synth controls
         synth_frame = ttk.LabelFrame(self.control_panel, text="Synthesizer")
@@ -197,48 +204,6 @@ class SynthesizerApp(tk.Tk):
                             command=self.update_adsr,
                             orient='horizontal')
             scale.pack(side='left', fill='x', expand=True, padx=5)
-
-        # Effects frame
-        effects_frame = ttk.LabelFrame(self.control_panel, text="Effects")
-        effects_frame.pack(fill='x', padx=5, pady=5)
-
-        # Effect controls
-        self.effect_vars = {}
-
-        # Tremolo
-        tremolo_frame = ttk.LabelFrame(effects_frame, text="Tremolo")
-        tremolo_frame.pack(fill='x', padx=5, pady=2)
-
-        self.effect_vars['tremolo'] = {
-            'enabled': tk.BooleanVar(value=False)
-        }
-        ttk.Checkbutton(tremolo_frame, text="Enable",
-                       variable=self.effect_vars['tremolo']['enabled'],
-                       command=lambda: self.toggle_effect('tremolo')).pack(padx=5, pady=2)
-
-        for param in ['Rate', 'Depth']:
-            frame = ttk.Frame(tremolo_frame)
-            frame.pack(fill='x', padx=5, pady=2)
-
-            ttk.Label(frame, text=param).pack(side='left')
-            var = tk.DoubleVar(value=0.5)
-            self.effect_vars['tremolo'][param.lower()] = var
-
-            scale = ttk.Scale(frame, from_=0.01, to=1.0,
-                            variable=var,
-                            command=lambda v, p=param.lower():
-                                self.update_effect_param('tremolo', p, v),
-                            orient='horizontal')
-            scale.pack(side='left', fill='x', expand=True, padx=5)
-
-        # Save/Load Presets
-        preset_frame = ttk.LabelFrame(self.control_panel, text="Presets")
-        preset_frame.pack(fill='x', padx=5, pady=5)
-
-        ttk.Button(preset_frame, text="Save Preset",
-                  command=self.save_preset).pack(fill='x', padx=5, pady=2)
-        ttk.Button(preset_frame, text="Load Preset",
-                  command=self.load_preset).pack(fill='x', padx=5, pady=2)
 
     def create_status_bar(self):
         self.status_bar = ttk.Frame(self.main_frame)
@@ -543,10 +508,12 @@ class SynthesizerApp(tk.Tk):
 
     def toggle_control_panel(self):
         """Toggle control panel visibility."""
-        if self.control_panel.winfo_viewable():
-            self.horizontal_paned.forget(self.control_panel)
+        if self.control_panel_visible:
+            self.control_panel.pack_forget()
+            self.control_panel_visible = False
         else:
-            self.horizontal_paned.add(self.control_panel, weight=1)
+            self.control_panel.pack(side='left', fill='y', after=self.keyboard)
+            self.control_panel_visible = True
 
     def reset_playback(self):
         """Reset playback position."""

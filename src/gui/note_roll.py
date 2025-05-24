@@ -20,13 +20,45 @@ class Note:
         }
 
 class NoteGroup:
-    def __init__(self, name="Group"):
+    def __init__(self, name, color=None):
         self.name = name
+        self.color = color if color else self._generate_color_from_name(name)
         self.notes = []
-        self.color = "#" + "".join([hex(x)[2:].zfill(2) for x in
-                                   [hash(name) % 256, (hash(name) * 2) % 256, (hash(name) * 3) % 256]])
         self.visible = True
         self.muted = False
+        self.solo = False
+
+    def _generate_color_from_name(self, name):
+        """Generate a deterministic color based on the group name."""
+        # Get hash of the name
+        name_hash = hash(name)
+
+        # Convert hash to positive number and get last 6 digits for RGB
+        positive_hash = abs(name_hash)
+        hex_hash = positive_hash % 0xFFFFFF
+
+        # Extract RGB components
+        r = (hex_hash & 0xFF0000) >> 16
+        g = (hex_hash & 0x00FF00) >> 8
+        b = hex_hash & 0x0000FF
+
+        # Ensure good contrast and vibrance
+        # Adjust brightness to be between 0.4 and 0.8 of max value
+        def adjust_component(c):
+            return int(102 + (c * 102 / 255))  # Maps 0-255 to 102-204
+
+        r = adjust_component(r)
+        g = adjust_component(g)
+        b = adjust_component(b)
+
+        # Convert to hex color string
+        return f'#{r:02x}{g:02x}{b:02x}'
+
+    def set_name(self, new_name):
+        """Update the name and regenerate the color."""
+        self.name = new_name
+        if not self.color:  # Only regenerate if color wasn't explicitly set
+            self.color = self._generate_color_from_name(new_name)
 
 class NoteRoll(tk.Frame):
     def __init__(self, parent, synth):
@@ -41,8 +73,53 @@ class NoteRoll(tk.Frame):
         self.is_playing = False
         self.current_group = None
 
-        self.setup_ui()
+        # Create canvas with dark background
+        self.canvas = tk.Canvas(
+            self,
+            bg='#1E1E1E',
+            highlightthickness=0
+        )
+        self.canvas.pack(side='right', fill='both', expand=True)
+
+        # Create timeline canvas
+        self.timeline = tk.Canvas(
+            self,
+            height=30,
+            bg='#2C3E50',
+            highlightthickness=0
+        )
+        self.timeline.pack(side='top', fill='x')
+
+        # Create scrollbars
+        self.v_scrollbar = ttk.Scrollbar(self, orient='vertical')
+        self.v_scrollbar.pack(side='right', fill='y')
+
+        self.h_scrollbar = ttk.Scrollbar(self, orient='horizontal')
+        self.h_scrollbar.pack(side='bottom', fill='x')
+
+        # Configure scrolling
+        self.canvas.configure(
+            xscrollcommand=self.h_scrollbar.set,
+            yscrollcommand=self.v_scrollbar.set
+        )
+        self.timeline.configure(xscrollcommand=self.h_scrollbar.set)
+
+        self.v_scrollbar.configure(command=self.canvas.yview)
+        self.h_scrollbar.configure(command=self.on_horizontal_scroll)
+
+        # Bind events
+        self.canvas.bind('<Button-1>', self.on_canvas_click)
+        self.canvas.bind('<B1-Motion>', self.on_drag)
+        self.canvas.bind('<ButtonRelease-1>', self.on_release)
+
+        # Initialize group counter
+        self.group_counter = 1
+
+        # Initialize first group
         self.create_default_group()
+
+        # Initial draw
+        self.redraw()
 
     def setup_ui(self):
         # Control panel
@@ -111,17 +188,23 @@ class NoteRoll(tk.Frame):
         self.update_roll()
 
     def create_default_group(self):
-        if not self.groups:  # Only create if no groups exist
-            default_group = NoteGroup("Default")
-            self.groups.append(default_group)
-            self.current_group = default_group
-            self.update_group_list()
+        """Create a default note group with an automatically generated name."""
+        group_name = f"Group {self.group_counter}"
+        self.group_counter += 1
+        group = NoteGroup(group_name)  # Color will be generated from name
+        self.groups.append(group)
+        self.current_group = group
 
-    def create_new_group(self):
-        name = f"Group {len(self.groups) + 1}"
-        self.groups.append(NoteGroup(name))
-        self.current_group = self.groups[-1]
-        self.update_group_list()
+    def create_new_group(self, name=None):
+        """Create a new group with optional custom name."""
+        if name is None:
+            name = f"Group {self.group_counter}"
+        self.group_counter += 1
+
+        group = NoteGroup(name)
+        self.groups.append(group)
+        self.current_group = group
+        return group
 
     def update_group_list(self):
         names = [group.name for group in self.groups]
@@ -138,11 +221,13 @@ class NoteRoll(tk.Frame):
         self.timeline.xview(*args)
 
     def zoom_in(self):
-        self.grid_size = min(64, self.grid_size * 1.2)
+        """Zoom in the grid view."""
+        self.grid_size = min(64, int(self.grid_size * 1.2))
         self.redraw()
 
     def zoom_out(self):
-        self.grid_size = max(16, self.grid_size / 1.2)
+        """Zoom out the grid view."""
+        self.grid_size = max(16, int(self.grid_size / 1.2))
         self.redraw()
 
     def toggle_playback(self):
@@ -185,25 +270,34 @@ class NoteRoll(tk.Frame):
         self.redraw()
         self.after(int(self.time_scale * 1000), self.play_notes)
 
+    def on_drag(self, event):
+        """Handle note duration adjustment"""
+        if self.selected_note:
+            x = self.canvas.canvasx(event.x)
+            time_pos = (x / self.grid_size) * self.time_scale
+            duration = max(self.time_scale, time_pos - self.selected_note.start_time)
+            self.selected_note.duration = duration
+            self.redraw()
+
+    def on_release(self, event):
+        """Handle end of drag operation"""
+        # Optional: Add any cleanup or finalization here
+        pass
+
+
     def on_canvas_click(self, event):
-        """Handle mouse click on canvas."""
         x = self.canvas.canvasx(event.x)
         y = self.canvas.canvasy(event.y)
 
         # Convert to time and frequency
-        time_pos = (x // self.grid_size) * self.time_scale
-        # Calculate MIDI note number (88 keys, starting from A0)
-        midi_note = 88 - (y // self.grid_size)
-        # Convert MIDI note to frequency (A4 = 69 = 440Hz)
-        freq = 440 * (2 ** ((midi_note - 69) / 12))
+        time_pos = (x / self.grid_size) * self.time_scale
+        midi_note = 88 - int(y / self.grid_size)  # Convert y position to MIDI note
+        freq = 440 * (2 ** ((midi_note - 69) / 12))  # Convert MIDI note to frequency
 
-        # Create new note with default duration
         note = Note(
             frequency=freq,
             start_time=time_pos,
-            duration=self.time_scale,  # Initial duration is one grid unit
-            velocity=1.0,
-            waveform='sine'
+            duration=self.time_scale  # Initial duration is one grid unit
         )
 
         if self.current_group is None:
@@ -302,6 +396,11 @@ class NoteRoll(tk.Frame):
         ttk.Button(dialog, text="Apply", command=apply_config).grid(
             row=3, column=0, columnspan=2, pady=10)
 
+    def on_horizontal_scroll(self, *args):
+        """Synchronize horizontal scrolling between timeline and main canvas"""
+        self.canvas.xview(*args)
+        self.timeline.xview(*args)
+
     def redraw(self):
         self.canvas.delete('all')
         self.timeline.delete('all')
@@ -310,31 +409,45 @@ class NoteRoll(tk.Frame):
         min_width = self.canvas.winfo_width()
         if any(group.notes for group in self.groups):
             max_time = max(
-                note.start_time + note.duration
-                for group in self.groups
-                for note in group.notes
+                (note.start_time + note.duration
+                 for group in self.groups
+                 for note in group.notes),
+                default=4  # Default to 4 seconds if no notes
             )
             width = max(
                 min_width,
-                (max_time / self.time_scale) * self.grid_size + 100
+                int((max_time / self.time_scale) * self.grid_size + 100)
             )
         else:
-            width = min_width
+            width = max(min_width, 800)  # Minimum width of 800px
 
-        height = self.canvas.winfo_height()
+        height = 88 * self.grid_size  # 88 piano keys
 
+        # Draw grid
+        self._draw_grid(width, height)
+
+        # Draw notes
+        self._draw_notes(width, height)
+
+        # Update scroll region
+        self.canvas.configure(scrollregion=(0, 0, width, height))
+        self.timeline.configure(scrollregion=(0, 0, width, 30))
+
+    def _draw_grid(self, width, height):
         # Draw vertical grid lines
-        for x in range(0, int(width), self.grid_size):
+        for x in range(0, width, self.grid_size):
+            is_major = (x // self.grid_size) % 4 == 0
+            color = '#444444' if is_major else '#333333'
+
             self.canvas.create_line(
                 x, 0, x, height,
-                fill='#333333',
+                fill=color,
                 width=1,
-                dash=(1, 2) if (x // self.grid_size) % 4 != 0 else None
+                dash=None if is_major else (1, 2)
             )
 
-            # Draw time markers
-            time = (x / self.grid_size) * self.time_scale
-            if (x // self.grid_size) % 4 == 0:  # Major time markers
+            if is_major:
+                time = (x / self.grid_size) * self.time_scale
                 self.timeline.create_text(
                     x, 15,
                     text=f"{time:.1f}s",
@@ -342,26 +455,24 @@ class NoteRoll(tk.Frame):
                     anchor='center'
                 )
 
-        # Draw horizontal grid lines (notes)
-        for i in range(88):  # 88 piano keys
+        # Draw horizontal grid lines
+        for i in range(88):
             y = i * self.grid_size
+            midi_note = 88 - i
+            note_number = midi_note % 12
+            is_black = note_number in [1, 3, 6, 8, 10]
+            is_c = note_number == 0
 
-            # Calculate note name and frequency
-            midi_note = 88 - i  # MIDI note number (A0 = 21 to C8 = 108)
-            if midi_note % 12 in [1, 3, 6, 8, 10]:  # Black keys
-                color = '#222222'
-            else:
-                color = '#333333'
+            color = '#444444' if is_c else '#333333' if not is_black else '#222222'
 
             self.canvas.create_line(
                 0, y, width, y,
                 fill=color,
                 width=1,
-                dash=(1, 2) if midi_note % 12 != 0 else None
+                dash=None if is_c else (1, 2)
             )
 
-            # Draw note names for C notes
-            if midi_note % 12 == 0:
+            if is_c:
                 octave = (midi_note // 12) - 1
                 self.canvas.create_text(
                     5, y + self.grid_size/2,
@@ -370,52 +481,51 @@ class NoteRoll(tk.Frame):
                     anchor='w'
                 )
 
-        # Draw notes for each group
+    def _draw_notes(self, width, height):
         for group in self.groups:
             if group.visible:
                 for note in group.notes:
-                    x1 = note.start_time / self.time_scale * self.grid_size
-                    x2 = (note.start_time + note.duration) / self.time_scale * self.grid_size
+                    x1 = int((note.start_time / self.time_scale) * self.grid_size)
+                    x2 = int(((note.start_time + note.duration) / self.time_scale) * self.grid_size)
 
-                    # Calculate y position based on frequency
-                    midi_note = int(round(12 * np.log2(note.frequency/440) + 49))
+                    midi_note = int(round(12 * np.log2(note.frequency/440) + 69))
                     y = (88 - midi_note) * self.grid_size
 
-                    # Draw note rectangle
+                    # Draw note rectangle with group color
+                    fill_color = '#666666' if group.muted else group.color
                     self.canvas.create_rectangle(
                         x1, y,
                         x2, y + self.grid_size - 1,
-                        fill=group.color if not group.muted else '#666666',
-                        outline='white' if note == self.selected_note else 'black',
+                        fill=fill_color,
+                        outline='white' if note == self.selected_note else '#000000',
                         width=2 if note == self.selected_note else 1
                     )
 
-                    # Draw note effects indicators
-                    if any(params['enabled'] for params in note.effects.values()):
-                        self.canvas.create_line(
-                            x1 + 4, y + 4,
-                            x1 + 12, y + 4,
-                            fill='yellow',
-                            width=2
+                    # Add subtle gradient effect
+                    if not group.muted:
+                        highlight_y = y + 2
+                        highlight_height = (self.grid_size - 4) // 2
+                        self.canvas.create_rectangle(
+                            x1 + 2, highlight_y,
+                            x2 - 2, highlight_y + highlight_height,
+                            fill=self._lighten_color(group.color),
+                            outline='',
+                            stipple='gray25'
                         )
 
-        # Draw playback position
-        if self.is_playing:
-            x = self.playing_position * self.grid_size
-            self.canvas.create_line(
-                x, 0, x, height,
-                fill='#FF0000',
-                width=2
-            )
-            self.timeline.create_line(
-                x, 0, x, 30,
-                fill='#FF0000',
-                width=2
-            )
+    def _lighten_color(self, color):
+        """Create a lighter version of a color for gradient effect."""
+        # Convert hex to RGB
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
 
-        # Update scrollregion
-        self.canvas.configure(scrollregion=(0, 0, width, 88 * self.grid_size))
-        self.timeline.configure(scrollregion=(0, 0, width, 30))
+        # Lighten by 20%
+        r = min(255, int(r * 1.2))
+        g = min(255, int(g * 1.2))
+        b = min(255, int(b * 1.2))
+
+        return f'#{r:02x}{g:02x}{b:02x}'
 
     def update_roll(self):
         self.redraw()
