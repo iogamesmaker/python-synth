@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 import json
 import time
+import numpy as np
 
 class Note:
     def __init__(self, frequency, start_time, duration, velocity=1.0,

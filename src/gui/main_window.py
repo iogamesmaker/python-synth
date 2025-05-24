@@ -1,7 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import json
-import datetime
 from pathlib import Path
 from src.gui.keyboard import PianoKeyboard
 from src.gui.note_roll import NoteRoll
@@ -30,36 +29,58 @@ class SynthesizerApp(tk.Tk):
         self.main_frame = ttk.Frame(self)
         self.main_frame.pack(fill='both', expand=True)
 
-        # Create main paned window for note roll and keyboard
-        self.main_paned = ttk.PanedWindow(self.main_frame, orient='vertical')
-        self.main_paned.pack(fill='both', expand=True)
+        # Create toolbar at the top
+        self.create_toolbar()
 
-        # Create horizontal paned window for controls and note roll
-        self.horizontal_paned = ttk.PanedWindow(self.main_paned, orient='horizontal')
-        self.main_paned.add(self.horizontal_paned, weight=3)
+        # Create main content area
+        self.content_frame = ttk.Frame(self.main_frame)
+        self.content_frame.pack(fill='both', expand=True)
 
-        # Create note roll FIRST
+        # Create horizontal paned window for keyboard and note roll
+        self.horizontal_paned = ttk.PanedWindow(self.content_frame, orient='horizontal')
+        self.horizontal_paned.pack(fill='both', expand=True)
+
+        # Create vertical frame for keyboard and control panel
+        self.left_panel = ttk.Frame(self.horizontal_paned)
+
+        # Create keyboard in left panel
+        self.keyboard = PianoKeyboard(self.left_panel, self.play_note)
+        self.keyboard.pack(fill='y', expand=True, side='left')
+
+        # Create control panel in left panel
+        self.create_control_panel()
+
+        # Create note roll on the right
         self.note_roll = NoteRoll(self.horizontal_paned, self.synth)
+
+        # Add panels to PanedWindow with weights
+        self.horizontal_paned.add(self.left_panel, weight=1)
         self.horizontal_paned.add(self.note_roll, weight=3)
 
-        # Create keyboard
-        self.keyboard = PianoKeyboard(self.main_paned, self.play_note)
-        self.main_paned.add(self.keyboard, weight=1)
-
-        # Now create the rest of the UI
-        self.create_menu()
-        self.create_toolbar()
-        self.create_control_panel()
+        # Create status bar at the bottom
         self.create_status_bar()
+
+        # Create menu
+        self.create_menu()
 
         # Set window minimum size
         self.minsize(1200, 800)
+
+        # Configure minimum sizes using sashpos after the window is created
+        self.after(100, self.configure_panes)
 
         # Bind events
         self.bind_events()
 
         # Start status update timer
         self.update_status()
+
+    def configure_panes(self):
+        """Configure pane sizes after the window is created"""
+        window_width = self.winfo_width()
+        # Set initial sash position to give keyboard about 200px
+        self.horizontal_paned.sashpos(0, 200)
+
 
     def create_menu(self):
         self.menu_bar = tk.Menu(self)

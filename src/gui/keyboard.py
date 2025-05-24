@@ -19,7 +19,8 @@ class PianoKey(tk.Canvas):
         if self.is_black:
             # Black key with gradient
             self.create_rectangle(
-                2, 2, self.winfo_width()-2, self.winfo_height()-2,
+                2, 2,
+                self.winfo_width()-2, self.winfo_height()-2,
                 fill='#111111' if self.is_pressed else 'black',
                 outline='#333333',
                 width=1
@@ -27,14 +28,16 @@ class PianoKey(tk.Canvas):
             if not self.is_pressed:
                 # Add glossy effect
                 self.create_rectangle(
-                    4, 4, self.winfo_width()-4, self.winfo_height()/2,
+                    4, 4,
+                    self.winfo_width()/2, self.winfo_height()-4,
                     fill='#333333',
                     outline='#333333'
                 )
         else:
             # White key with gradient and shadow
             self.create_rectangle(
-                2, 2, self.winfo_width()-2, self.winfo_height()-2,
+                2, 2,
+                self.winfo_width()-2, self.winfo_height()-2,
                 fill='#EEEEEE' if self.is_pressed else 'white',
                 outline='#CCCCCC',
                 width=1
@@ -42,7 +45,8 @@ class PianoKey(tk.Canvas):
             if not self.is_pressed:
                 # Add glossy effect
                 self.create_rectangle(
-                    4, 4, self.winfo_width()-4, self.winfo_height()/3,
+                    4, 4,
+                    self.winfo_width()/3, self.winfo_height()-4,
                     fill='white',
                     outline='',
                     stipple='gray50'
@@ -82,7 +86,7 @@ class PianoKey(tk.Canvas):
             self.draw()
 
 class PianoKeyboard(tk.Frame):
-    def __init__(self, parent, play_callback: Callable[[float, bool], None]):
+    def __init__(self, parent, play_callback):
         super().__init__(parent)
         self.play_callback = play_callback
         self.note_manager = NoteManager()
@@ -90,31 +94,12 @@ class PianoKeyboard(tk.Frame):
         self.pressed_keys = set()
 
         # Configure frame
-        self.configure(bg='#2C3E50')  # Dark blue-gray background
+        self.configure(bg='#2C3E50', width=150)  # Fixed width for vertical keyboard
         self.pack_propagate(False)
 
-        # Create title label
-        title = tk.Label(
-            self,
-            text="Virtual Piano",
-            font=('Helvetica', 14, 'bold'),
-            fg='white',
-            bg='#2C3E50',
-            pady=10
-        )
-        title.pack()
-
         # Create keyboard container
-        self.keyboard_frame = tk.Frame(
-            self,
-            bg='#2C3E50',
-            padx=20,
-            pady=10
-        )
-        self.keyboard_frame.pack(expand=True, fill='both')
-
-        # Create octave labels
-        self.create_octave_labels()
+        self.keyboard_frame = tk.Frame(self, bg='#2C3E50', width=150)
+        self.keyboard_frame.pack(fill='both', expand=True)
 
         # Create piano keys
         self.create_keyboard()
@@ -122,9 +107,6 @@ class PianoKeyboard(tk.Frame):
         # Bind computer keyboard events
         self.bind_all('<KeyPress>', self.on_key_press)
         self.bind_all('<KeyRelease>', self.on_key_release)
-
-        # Create key mapping legend
-        self.create_legend()
 
     def create_octave_labels(self):
         label_frame = tk.Frame(self.keyboard_frame, bg='#2C3E50')
@@ -143,28 +125,22 @@ class PianoKeyboard(tk.Frame):
     def create_keyboard(self):
         white_notes = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
         black_notes = ['C#', 'D#', 'F#', 'G#', 'A#']
+        key_height = 40  # Height of white keys
 
-        # Container for white keys
-        white_keys_frame = tk.Frame(self.keyboard_frame, bg='#2C3E50')
-        white_keys_frame.pack(fill='x')
-
-        # Create two octaves
+        # Create two octaves (from bottom to top)
         for octave in [4, 5]:
-            octave_frame = tk.Frame(white_keys_frame, bg='#2C3E50')
-            octave_frame.pack(side='left', padx=10)
-
             # Create white keys
-            for note in white_notes:
+            for i, note in enumerate(reversed(white_notes)):  # Reverse for bottom-to-top
                 note_name = f"{note}{octave}"
                 key = PianoKey(
-                    octave_frame,
+                    self.keyboard_frame,
                     is_black=False,
-                    width=50,
-                    height=160
+                    width=120,
+                    height=key_height
                 )
-                key.pack(side='left', padx=1)
-                freq = self.note_manager.get_frequency(note_name)
+                key.place(x=0, y=(13-i-7*octave)*key_height)  # Position from bottom
 
+                freq = self.note_manager.get_frequency(note_name)
                 key.bind('<<KeyPressed>>',
                         lambda e, f=freq: self.play_callback(f, True))
                 key.bind('<<KeyReleased>>',
@@ -172,21 +148,18 @@ class PianoKeyboard(tk.Frame):
 
                 self.keys[note_name] = key
 
-            # Create black keys (overlaid on white keys)
-            x_offset = 35  # Position from left edge of white key
-            for i, note in enumerate(black_notes):
+            # Create black keys
+            black_positions = [1, 2, 4, 5, 6]  # Relative to white keys
+            for i, note in enumerate(reversed(black_notes)):  # Reverse for bottom-to-top
                 note_name = f"{note}{octave}"
                 key = PianoKey(
-                    octave_frame,
+                    self.keyboard_frame,
                     is_black=True,
-                    width=30,
-                    height=100
+                    width=80,
+                    height=key_height * 0.6
                 )
-                # Calculate position based on white key pattern
-                x_pos = x_offset + (i * 50)
-                if i > 1:  # Adjust for gap between E and F
-                    x_pos += 50
-                key.place(x=x_pos, y=0)
+                y_pos = (13-black_positions[i]-7*octave)*key_height + key_height*0.2
+                key.place(x=0, y=y_pos)
 
                 freq = self.note_manager.get_frequency(note_name)
                 key.bind('<<KeyPressed>>',
