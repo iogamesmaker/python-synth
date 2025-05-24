@@ -73,15 +73,7 @@ class NoteRoll(tk.Frame):
         self.is_playing = False
         self.current_group = None
 
-        # Create canvas with dark background
-        self.canvas = tk.Canvas(
-            self,
-            bg='#1E1E1E',
-            highlightthickness=0
-        )
-        self.canvas.pack(side='right', fill='both', expand=True)
-
-        # Create timeline canvas
+        # Create timeline canvas first
         self.timeline = tk.Canvas(
             self,
             height=30,
@@ -89,6 +81,14 @@ class NoteRoll(tk.Frame):
             highlightthickness=0
         )
         self.timeline.pack(side='top', fill='x')
+
+        # Create main canvas
+        self.canvas = tk.Canvas(
+            self,
+            bg='#1E1E1E',
+            highlightthickness=0
+        )
+        self.canvas.pack(side='left', fill='both', expand=True)
 
         # Create scrollbars
         self.v_scrollbar = ttk.Scrollbar(self, orient='vertical')
@@ -111,6 +111,7 @@ class NoteRoll(tk.Frame):
         self.canvas.bind('<Button-1>', self.on_canvas_click)
         self.canvas.bind('<B1-Motion>', self.on_drag)
         self.canvas.bind('<ButtonRelease-1>', self.on_release)
+        self.canvas.bind('<Button-3>', self.show_note_config)
 
         # Initialize group counter
         self.group_counter = 1

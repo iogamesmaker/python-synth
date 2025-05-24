@@ -7,6 +7,7 @@ class ADSREnvelope:
         self.current_time = 0
         self.state = 'attack'
         self.level = 0
+        self.is_active = True  # Add this flag to track if envelope is still active
 
     def set_parameters(self, attack, decay, sustain, release):
         """Set ADSR parameters in seconds, sustain is amplitude level 0-1."""
@@ -26,8 +27,14 @@ class ADSREnvelope:
 
         if is_release and self.state != 'release':
             self.state = 'release'
+            # Start release from current level
+            self.release_rate = self.level / (self.release * self.sample_rate)
 
         for i in range(buffer_size):
+            if not self.is_active:
+                envelope[i] = 0
+                continue
+
             if self.state == 'attack':
                 self.level += self.attack_rate
                 if self.level >= 1.0:
@@ -42,8 +49,9 @@ class ADSREnvelope:
 
             elif self.state == 'release':
                 self.level -= self.release_rate
-                if self.level <= 0:
+                if self.level <= 0.001:  # Changed threshold to 0.001
                     self.level = 0
+                    self.is_active = False  # Mark envelope as inactive
 
             envelope[i] = max(0, min(1, self.level))
 
@@ -54,6 +62,7 @@ class ADSREnvelope:
         self.current_time = 0
         self.state = 'attack'
         self.level = 0
+        self.is_active = True  # Reset active state
 
 class AudioEffects:
     def __init__(self, sample_rate=44100):

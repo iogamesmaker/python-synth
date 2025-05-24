@@ -2,8 +2,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import json
 from pathlib import Path
-from src.gui.keyboard import PianoKeyboard
-from src.gui.note_roll import NoteRoll
+from src.gui.piano_roll import PianoRoll  # Updated import
 from src.audio_engine.synthesizer import Synthesizer
 
 class SynthesizerApp(tk.Tk):
@@ -33,32 +32,24 @@ class SynthesizerApp(tk.Tk):
         # Create toolbar at the top
         self.create_toolbar()
 
-        # Create main content area
+        # Create main content area with control panel and piano roll
         self.content_frame = ttk.Frame(self.main_frame)
         self.content_frame.pack(fill='both', expand=True)
 
-        # Create horizontal paned window for keyboard+control and note roll
+        # Create horizontal paned window
         self.horizontal_paned = ttk.PanedWindow(self.content_frame, orient='horizontal')
         self.horizontal_paned.pack(fill='both', expand=True)
 
-        # Create left panel with fixed width
-        self.left_panel = ttk.Frame(self.horizontal_paned, width=250)
-        self.left_panel.pack_propagate(False)
-
-        # Create keyboard
-        self.keyboard = PianoKeyboard(self.left_panel, self.play_note)
-        self.keyboard.pack(side='left', fill='y')
-
-        # Create control panel
-        self.control_panel = ttk.Frame(self.left_panel)
+        # Create left panel for control panel
+        self.left_panel = ttk.Frame(self.horizontal_paned)
         self.create_control_panel()
 
-        # Create note roll
-        self.note_roll = NoteRoll(self.horizontal_paned, self.synth)
+        # Create piano roll
+        self.piano_roll = PianoRoll(self.horizontal_paned, self.synth)
 
-        # Add panels to PanedWindow (only add once!)
+        # Add panels to PanedWindow
         self.horizontal_paned.add(self.left_panel)
-        self.horizontal_paned.add(self.note_roll, weight=1)
+        self.horizontal_paned.add(self.piano_roll, weight=1)
 
         # Create status bar at the bottom
         self.create_status_bar()
@@ -69,7 +60,7 @@ class SynthesizerApp(tk.Tk):
         # Set window minimum size
         self.minsize(1200, 800)
 
-        # Configure pane sizes after window is created
+        # Configure pane sizes
         self.after(100, self.configure_panes)
 
         # Bind events
@@ -79,11 +70,9 @@ class SynthesizerApp(tk.Tk):
         self.update_status()
 
     def configure_panes(self):
-        """Configure pane sizes after the window is created"""
+        """Configure initial pane sizes."""
         window_width = self.winfo_width()
-        # Set initial sash position to give keyboard about 200px
-        self.horizontal_paned.sashpos(0, 200)
-
+        self.horizontal_paned.sashpos(0, 250)  # Set left panel width to 250px
 
     def create_menu(self):
         self.menu_bar = tk.Menu(self)
@@ -109,11 +98,13 @@ class SynthesizerApp(tk.Tk):
         edit_menu.add_separator()
         edit_menu.add_command(label="Preferences...", command=self.show_preferences)
 
-        # View menu
+        # Update View menu
         view_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label="View", menu=view_menu)
-        view_menu.add_command(label="Zoom In", command=lambda: self.note_roll.zoom_in())
-        view_menu.add_command(label="Zoom Out", command=lambda: self.note_roll.zoom_out())
+        view_menu.add_command(label="Zoom In (Ctrl+Plus)",
+                            command=self.piano_roll.zoom_in)
+        view_menu.add_command(label="Zoom Out (Ctrl+Minus)",
+                            command=self.piano_roll.zoom_out)
         view_menu.add_separator()
         view_menu.add_checkbutton(
             label="Show Control Panel",
@@ -169,8 +160,9 @@ class SynthesizerApp(tk.Tk):
 
     def create_control_panel(self):
         """Create the control panel widgets."""
-        # Make sure control panel is packed properly
-        self.control_panel.pack(side='right', fill='both', expand=True)
+        # Create and pack control panel in left panel
+        self.control_panel = ttk.Frame(self.left_panel)
+        self.control_panel.pack(side='top', fill='both', expand=True)
 
         # Synth controls
         synth_frame = ttk.LabelFrame(self.control_panel, text="Synthesizer")
@@ -237,11 +229,16 @@ class SynthesizerApp(tk.Tk):
         self.bind('<Control-n>', lambda e: self.new_project())
         self.bind('<Control-z>', lambda e: self.undo())
         self.bind('<Control-y>', lambda e: self.redo())
+        # Add zoom shortcuts
+        self.bind('<Control-minus>', lambda e: self.piano_roll.zoom_out())
+        self.bind('<Control-equal>', lambda e: self.piano_roll.zoom_in())
+        self.bind('<Control-plus>', lambda e: self.piano_roll.zoom_in())
 
     def update_status(self):
+        """Update status display."""
         # Update time display
-        if self.note_roll.is_playing:
-            time_pos = self.note_roll.playing_position * self.note_roll.time_scale
+        if self.piano_roll.is_playing:
+            time_pos = self.piano_roll.playing_position * self.piano_roll.time_scale
             self.time_display.config(
                 text=f"{int(time_pos//60):02d}:{int(time_pos%60):02d}:"
                      f"{int((time_pos%1)*1000):03d}")
@@ -290,33 +287,14 @@ class SynthesizerApp(tk.Tk):
                                      "Current project has unsaved changes. Continue?"):
                 return
 
+        # Clear existing groups and notes
+        self.piano_roll.groups.clear()
+        self.piano_roll.create_default_group()
+        self.piano_roll.redraw()
+
         self.project_path = None
         self.project_modified = False
-        self.note_roll.reset()
         self.update_title()
-
-    def open_project(self):
-        """Open a project file."""
-        if self.project_modified:
-            if not messagebox.askyesno("Open Project",
-                                     "Current project has unsaved changes. Continue?"):
-                return
-
-        filepath = filedialog.askopenfilename(
-            defaultextension=".synth",
-            filetypes=[("Synthesizer Project", "*.synth"), ("All Files", "*.*")]
-        )
-
-        if filepath:
-            try:
-                with open(filepath, 'r') as f:
-                    data = json.load(f)
-                self.note_roll.load_from_data(data)
-                self.project_path = filepath
-                self.project_modified = False
-                self.update_title()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to open project: {e}")
 
     def save_project(self):
         """Save the current project."""
@@ -324,9 +302,40 @@ class SynthesizerApp(tk.Tk):
             return self.save_project_as()
 
         try:
-            data = self.note_roll.save_to_data()
+            # Get data from piano roll
+            data = {
+                'notes': [],
+                'groups': []
+            }
+
+            # Save groups and their notes
+            for group in self.piano_roll.groups:
+                group_data = {
+                    'name': group.name,
+                    'color': group.color,
+                    'visible': group.visible,
+                    'muted': group.muted,
+                    'solo': group.solo,
+                    'notes': []
+                }
+
+                for note in group.notes:
+                    note_data = {
+                        'frequency': note.frequency,
+                        'start_time': note.start_time,
+                        'duration': note.duration,
+                        'velocity': note.velocity,
+                        'waveform': note.waveform,
+                        'adsr': note.adsr,
+                        'effects': note.effects
+                    }
+                    group_data['notes'].append(note_data)
+
+                data['groups'].append(group_data)
+
             with open(self.project_path, 'w') as f:
                 json.dump(data, f)
+
             self.project_modified = False
             self.update_title()
             return True
@@ -345,6 +354,53 @@ class SynthesizerApp(tk.Tk):
             self.project_path = filepath
             return self.save_project()
         return False
+
+    def open_project(self):
+        """Open a project file."""
+        if self.project_modified:
+            if not messagebox.askyesno("Open Project",
+                                     "Current project has unsaved changes. Continue?"):
+                return
+
+        filepath = filedialog.askopenfilename(
+            defaultextension=".synth",
+            filetypes=[("Synthesizer Project", "*.synth"), ("All Files", "*.*")]
+        )
+
+        if filepath:
+            try:
+                with open(filepath, 'r') as f:
+                    data = json.load(f)
+
+                # Clear existing groups
+                self.piano_roll.groups.clear()
+
+                # Load groups and notes
+                for group_data in data['groups']:
+                    group = self.piano_roll.create_new_group(group_data['name'])
+                    group.color = group_data['color']
+                    group.visible = group_data['visible']
+                    group.muted = group_data['muted']
+                    group.solo = group_data['solo']
+
+                    for note_data in group_data['notes']:
+                        note = Note(
+                            frequency=note_data['frequency'],
+                            start_time=note_data['start_time'],
+                            duration=note_data['duration'],
+                            velocity=note_data['velocity'],
+                            waveform=note_data['waveform'],
+                            adsr=note_data['adsr'],
+                            effects=note_data['effects']
+                        )
+                        group.notes.append(note)
+
+                self.project_path = filepath
+                self.project_modified = False
+                self.update_title()
+                self.piano_roll.redraw()
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to open project: {e}")
 
     def export_audio(self):
         """Export the project as an audio file."""
@@ -509,26 +565,26 @@ class SynthesizerApp(tk.Tk):
     def toggle_control_panel(self):
         """Toggle control panel visibility."""
         if self.control_panel_visible:
-            self.control_panel.pack_forget()
+            self.left_panel.pack_forget()
             self.control_panel_visible = False
         else:
-            self.control_panel.pack(side='left', fill='y', after=self.keyboard)
+            self.horizontal_paned.insert(0, self.left_panel)
             self.control_panel_visible = True
-
-    def reset_playback(self):
-        """Reset playback position."""
-        self.note_roll.reset_playback()
-        self.is_playing = False
 
     def toggle_playback(self):
         """Toggle playback state."""
         self.is_playing = not self.is_playing
-        self.note_roll.toggle_playback()
+        self.piano_roll.toggle_playback()
+
+    def reset_playback(self):
+        """Reset playback position."""
+        self.piano_roll.reset_playback()
+        self.is_playing = False
 
     def stop_playback(self):
         """Stop playback and reset position."""
         self.is_playing = False
-        self.note_roll.reset_playback()
+        self.piano_roll.reset_playback()
 
     def toggle_recording(self):
         """Toggle recording state."""

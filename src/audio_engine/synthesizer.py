@@ -75,14 +75,7 @@ class Synthesizer:
             raise
 
     def _audio_callback(self, outdata, frames, time, status):
-        """Audio callback function for real-time audio synthesis.
-
-        Args:
-            outdata: numpy array for output audio data
-            frames: number of frames to generate
-            time: stream time
-            status: status of the stream
-        """
+        """Audio callback function for real-time audio synthesis."""
         if status:
             print(status)
 
@@ -102,8 +95,8 @@ class Synthesizer:
                     is_release=voice.release_start
                 )
 
-                # If release is complete, remove the voice
-                if voice.release_start and np.all(envelope < 0.001):
+                # If envelope is no longer active, remove the voice
+                if not voice.envelope.is_active:
                     del self.voices[freq]
                     continue
 
