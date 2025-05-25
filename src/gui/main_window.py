@@ -11,7 +11,7 @@ class SynthesizerApp(tk.Tk):
 
         # Configure main window
         self.title("Python Synthesizer")
-        self.geometry("1200x800")
+        self.geometry("1280x720")
         self.configure(bg='#2C3E50')
 
         # Initialize variables
@@ -58,7 +58,7 @@ class SynthesizerApp(tk.Tk):
         self.create_menu()
 
         # Set window minimum size
-        self.minsize(1200, 800)
+        self.minsize(1280, 720)
 
         # Configure pane sizes
         self.after(100, self.configure_panes)
