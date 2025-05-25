@@ -19,7 +19,8 @@ class Synthesizer:
     def __init__(self, sample_rate=44100):
         self.sample_rate = sample_rate
         self.voices = {}  # frequency -> Voice
-        self.buffer_size = 1024
+        # Reduced buffer size for better responsiveness
+        self.buffer_size = 256  # Changed from 1024 to 256
         self.is_playing = False
         self.stream = None
 
@@ -51,10 +52,11 @@ class Synthesizer:
             'release': 0.2
         }
 
-        # Set up sounddevice
+        # Set up sounddevice with optimized settings
         sd.default.samplerate = self.sample_rate
         sd.default.channels = 1
         sd.default.dtype = 'float32'
+        sd.default.latency = ('low', 'low')  # Added for lower latency
 
     def start_stream(self):
         """Initialize and start the audio stream."""
@@ -64,7 +66,8 @@ class Synthesizer:
                 samplerate=self.sample_rate,
                 channels=1,
                 callback=self._audio_callback,
-                blocksize=self.buffer_size
+                blocksize=self.buffer_size,
+                latency='low'  # Added explicit latency setting
             )
             self.stream.start()
             print("Audio stream started successfully")
@@ -136,6 +139,18 @@ class Synthesizer:
             state (bool): True for note on, False for note off
             velocity (float): The velocity/volume of the note (0.0 to 1.0)
         """
+        # Added input validation
+        if not isinstance(frequency, (int, float)) or frequency <= 0:
+            print(f"Invalid frequency value: {frequency}")
+            return
+
+        if not isinstance(state, bool):
+            print(f"Invalid state value: {state}")
+            return
+
+        # Clamp velocity between 0.0 and 1.0
+        velocity = max(0.0, min(1.0, float(velocity)))
+
         if state:  # Note On
             voice = Voice(frequency, velocity)
             voice.envelope.set_parameters(
@@ -167,12 +182,16 @@ class Synthesizer:
             sustain (float): Sustain level (0.0 to 1.0)
             release (float): Release time in seconds
         """
-        self.adsr_params.update({
-            'attack': max(0.01, float(attack)),
-            'decay': max(0.01, float(decay)),
-            'sustain': max(0.0, min(1.0, float(sustain))),
-            'release': max(0.01, float(release))
-        })
+        # Added input validation for ADSR parameters
+        try:
+            self.adsr_params.update({
+                'attack': max(0.01, float(attack)),
+                'decay': max(0.01, float(decay)),
+                'sustain': max(0.0, min(1.0, float(sustain))),
+                'release': max(0.01, float(release))
+            })
+        except (ValueError, TypeError) as e:
+            print(f"Invalid ADSR parameter value: {e}")
 
     def set_effect_param(self, param, value):
         """Set an effect parameter.
@@ -182,7 +201,10 @@ class Synthesizer:
             value (float): The parameter value
         """
         if param in self.effects_params:
-            self.effects_params[param] = float(value)
+            try:
+                self.effects_params[param] = float(value)
+            except (ValueError, TypeError) as e:
+                print(f"Invalid effect parameter value: {e}")
 
     def toggle_effect(self, effect, state):
         """Enable/disable an effect.
@@ -192,7 +214,10 @@ class Synthesizer:
             state (bool): True to enable, False to disable
         """
         if effect in self.effects_enabled:
-            self.effects_enabled[effect] = bool(state)
+            try:
+                self.effects_enabled[effect] = bool(state)
+            except (ValueError, TypeError) as e:
+                print(f"Invalid effect state value: {e}")
 
     def set_volume(self, volume):
         """Set the master volume.
@@ -200,7 +225,10 @@ class Synthesizer:
         Args:
             volume (float): Volume level (0.0 to 1.0)
         """
-        self.volume = max(0.0, min(1.0, float(volume)))
+        try:
+            self.volume = max(0.0, min(1.0, float(volume)))
+        except (ValueError, TypeError) as e:
+            print(f"Invalid volume value: {e}")
 
     def get_active_voices(self):
         """Get the number of currently active voices.

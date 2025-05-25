@@ -490,8 +490,8 @@ class PianoRoll(tk.Frame):
             snapped_x = int((snapped_time / self.time_scale) * self.grid_size)
 
         elif self.snap_settings['mode'] == 'triplet':
-            # Snap to triplet divisions (divide grid into three parts)
-            triplet_time = self.time_scale / 3
+            # Snap to triplet divisions (divide grid into four parts)
+            triplet_time = self.time_scale / 4
             snapped_time = round(time_value / triplet_time) * triplet_time
             snapped_x = int((snapped_time / self.time_scale) * self.grid_size)
 
@@ -963,8 +963,7 @@ class PianoRoll(tk.Frame):
         time_pos = (x / self.grid_size) * self.time_scale
         midi_note = 88 - int(y / self.grid_size)
 
-        # Add some tolerance for clicking
-        time_tolerance = self.time_scale / 4  # 1/4 grid cell tolerance
+        time_tolerance = 0
 
         for group in self.groups:
             for note in group.notes:
