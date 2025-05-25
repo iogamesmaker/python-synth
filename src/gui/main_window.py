@@ -19,7 +19,6 @@ class SynthesizerApp(tk.Tk):
         self.project_modified = False
         self.is_playing = False
         self.is_recording = False
-        self.control_panel_visible = True
 
         # Initialize audio components
         self.synth = Synthesizer()
@@ -106,11 +105,6 @@ class SynthesizerApp(tk.Tk):
         view_menu.add_command(label="Zoom Out (Ctrl+Minus)",
                             command=self.piano_roll.zoom_out)
         view_menu.add_separator()
-        view_menu.add_checkbutton(
-            label="Show Control Panel",
-            command=self.toggle_control_panel,
-            variable=tk.BooleanVar(value=self.control_panel_visible)
-        )
 
         # Help menu
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
@@ -561,15 +555,6 @@ class SynthesizerApp(tk.Tk):
             "Created by: iogamesmaker\n"
             "Date: 2025-05-24"
         )
-
-    def toggle_control_panel(self):
-        """Toggle control panel visibility."""
-        if self.control_panel_visible:
-            self.left_panel.pack_forget()
-            self.control_panel_visible = False
-        else:
-            self.horizontal_paned.insert(0, self.left_panel)
-            self.control_panel_visible = True
 
     def toggle_playback(self):
         """Toggle playback state."""

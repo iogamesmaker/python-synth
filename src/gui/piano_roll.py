@@ -96,25 +96,25 @@ class PianoRoll(tk.Frame):
         self.current_group = None
         self.group_counter = 1
 
-        # Add snapping settings
+        # Initialize snap settings first
         self.snap_settings = {
             'enabled': True,
-            'mode': 'grid',  # 'grid', 'triplet', 'free'
-            'grid_division': 4,  # subdivisions per grid cell (4 = quarter notes)
-            'magnetic_snap': True,  # snap to nearby notes
-            'magnetic_threshold': 10,  # pixels
+            'mode': 'grid',
+            'grid_division': 4,
+            'magnetic_snap': True,
+            'magnetic_threshold': 10,
             'show_snap_lines': True,
         }
 
-        # Create main container
-        self.main_container = tk.Frame(self)
+        # Create main container with specific background
+        self.main_container = tk.Frame(self, bg='#1E1E1E')
         self.main_container.pack(fill='both', expand=True)
 
-        # Create control panel frame first
+        # Create control panel frame
         self.control_panel = ttk.Frame(self.main_container)
-        self.control_panel.pack(side='top', fill='x')
+        self.control_panel.pack(side='top', fill='x', padx=5, pady=5)
 
-        # Setup the control panel (now contains all controls)
+        # Setup the control panel
         self.setup_control_panel()
 
         # Create timeline at the top
@@ -126,23 +126,33 @@ class PianoRoll(tk.Frame):
         )
         self.timeline.pack(fill='x')
 
-        # Create piano keyboard frame on the left
-        self.piano_frame = tk.Frame(self.main_container, bg='#1E1E1E')
-        self.piano_frame.pack(side='left', fill='y')
+        # Create central layout container with weights
+        self.layout_container = tk.Frame(self.main_container, bg='#1E1E1E')
+        self.layout_container.pack(fill='both', expand=True, padx=5)
+        self.layout_container.grid_columnconfigure(1, weight=1)  # Make center column expandable
 
-        # Create note roll canvas
+        # Create left keyboard frame
+        self.left_keyboard_frame = tk.Frame(self.layout_container, bg='#1E1E1E', width=40)
+        self.left_keyboard_frame.grid(row=0, column=0, sticky='ns')
+        self.left_keyboard_frame.grid_propagate(False)  # Prevent frame from shrinking
+
+        # Create central piano roll frame
+        self.piano_roll_frame = tk.Frame(self.layout_container, bg='#1E1E1E')
+        self.piano_roll_frame.grid(row=0, column=1, sticky='nsew')
+
+        # Create canvas for piano roll
         self.canvas = tk.Canvas(
-            self.main_container,
+            self.piano_roll_frame,
             bg='#1E1E1E',
             highlightthickness=0
         )
         self.canvas.pack(side='left', fill='both', expand=True)
 
         # Create scrollbars
-        self.v_scrollbar = ttk.Scrollbar(self.main_container, orient='vertical')
+        self.v_scrollbar = ttk.Scrollbar(self.piano_roll_frame, orient='vertical')
         self.v_scrollbar.pack(side='right', fill='y')
 
-        self.h_scrollbar = ttk.Scrollbar(self, orient='horizontal')
+        self.h_scrollbar = ttk.Scrollbar(self.main_container, orient='horizontal')
         self.h_scrollbar.pack(side='bottom', fill='x')
 
         # Configure scrolling
@@ -155,9 +165,8 @@ class PianoRoll(tk.Frame):
         self.v_scrollbar.configure(command=self._on_vertical_scroll)
         self.h_scrollbar.configure(command=self._on_horizontal_scroll)
 
-        # Create piano keys
-        self.piano_keys = {}
-        self.create_piano_keyboard()
+        # Initialize piano keys dictionary
+        self.piano_keys = {'left': {}}
 
         # Add state tracking for note manipulation
         self.dragging_note = None
@@ -172,12 +181,32 @@ class PianoRoll(tk.Frame):
         self.panning = False
         self.pan_start_x = 0
         self.pan_start_y = 0
-        self.last_scroll_time = 0  # For handling scroll zoom acceleration
+        self.last_scroll_time = 0
+
+        # Initialize undo/redo stacks
+        self.undo_stack = []
+        self.redo_stack = []
+        self.max_undo_steps = 50
+
+        # Create the keyboard layouts
+        self.create_keyboard_layout()
+
+        # Initialize first group
+        self.create_default_group()
+
+        # Initial draw
+        self.redraw()
+
+        # Start update loop
+        self.update_roll()
 
         # Bind additional controls
+        self._bind_controls()
+
+    def _bind_controls(self):
+        """Bind all control events."""
         self.canvas.bind('<Button-1>', self.on_canvas_click)
         self.canvas.bind('<B1-Motion>', self.on_drag)
-        # Add right-click binding
         self.canvas.bind('<Button-3>', self.on_right_click)  # Right-click
         self.canvas.bind('<ButtonRelease-1>', self.on_release)
         self.canvas.bind('<Button-2>', self.start_pan)
@@ -197,20 +226,6 @@ class PianoRoll(tk.Frame):
         self.bind_all('<Down>', self.move_selected_note_down)
         self.bind_all('<Shift-Left>', self.adjust_note_duration)
         self.bind_all('<Shift-Right>', self.adjust_note_duration)
-
-        # Initialize undo/redo stacks
-        self.undo_stack = []
-        self.redo_stack = []
-        self.max_undo_steps = 50
-
-        # Initialize first group
-        self.create_default_group()
-
-        # Initial draw
-        self.redraw()
-
-        # Start update loop
-        self.update_roll()
 
     def setup_control_panel(self):
         """Set up the control panel with group, playback, and snap controls in a single row."""
@@ -285,15 +300,25 @@ class PianoRoll(tk.Frame):
         ttk.Button(zoom_frame, text="+", width=3,
                   command=self.zoom_in).pack(side='left', padx=2)
 
-    def create_piano_keyboard(self):
-        """Create the piano keyboard that scales with the note roll."""
-        for widget in self.piano_frame.winfo_children():
+    def create_keyboard_layout(self):
+        """Create keyboard layouts on both sides of the note roll."""
+        # Clear existing keys from both frames
+        for widget in self.left_keyboard_frame.winfo_children():
             widget.destroy()
 
         key_width = 40
         key_height = self.grid_size  # Match note height
 
-        # Create 88 keys (standard piano range)
+        # Calculate total height needed
+        total_height = 88 * key_height  # 88 keys
+
+        # Configure frame heights
+        self.left_keyboard_frame.configure(height=total_height)
+
+        # Dictionary to store both left and right piano keys
+        self.piano_keys = {'left': {}}
+
+        # Create 88 keys for both keyboards (standard piano range)
         for i in range(88):
             midi_note = 88 - i
             note_number = midi_note % 12
@@ -302,19 +327,38 @@ class PianoRoll(tk.Frame):
             # Calculate frequency
             freq = 440 * (2 ** ((midi_note - 69) / 12))
 
-            key = PianoKey(
-                self.piano_frame,
+            # Create left keyboard key
+            left_key = PianoKey(
+                self.left_keyboard_frame,
                 is_black=is_black,
                 width=key_width,
                 height=key_height
             )
-            key.place(x=0, y=i * key_height)
+            left_key.place(x=0, y=i * key_height)
 
-            # Bind note playing events
-            key.bind('<<KeyPressed>>', lambda e, f=freq: self.synth.play_note(f, True))
-            key.bind('<<KeyReleased>>', lambda e, f=freq: self.synth.play_note(f, False))
+            # Bind note playing events for both keys
+            def make_play_handler(freq, is_pressed):
+                return lambda e: self.synth.play_note(freq, is_pressed)
 
-            self.piano_keys[midi_note] = key
+            left_key.bind('<<KeyPressed>>', make_play_handler(freq, True))
+            left_key.bind('<<KeyReleased>>', make_play_handler(freq, False))
+
+            # Store keys in the dictionary
+            self.piano_keys['left'][midi_note] = left_key
+
+        # Make sure frames maintain their size
+        self.left_keyboard_frame.grid_propagate(False)
+
+    def _on_vertical_scroll(self, *args):
+        """Handle vertical scrolling of both piano and canvas."""
+        self.canvas.yview(*args)
+        if args[0] == 'moveto':
+            y_offset = -float(args[1]) * self.canvas.winfo_height()
+            self.left_keyboard_frame.place_configure(y=y_offset)
+        elif args[0] == 'scroll':
+            delta = int(args[1]) * int(args[2])
+            self.left_keyboard_frame.place_configure(
+                y=self.left_keyboard_frame.winfo_y() - delta)
 
     def create_default_group(self):
         """Create a default note group."""
@@ -349,15 +393,6 @@ class PianoRoll(tk.Frame):
         self.current_group = next(g for g in self.groups if g.name == selected)
         self.redraw()
 
-    def _on_vertical_scroll(self, *args):
-        """Handle vertical scrolling of both piano and canvas."""
-        self.canvas.yview(*args)
-        if args[0] == 'moveto':
-            self.piano_frame.place_configure(y=-float(args[1]) * self.canvas.winfo_height())
-        elif args[0] == 'scroll':
-            delta = int(args[1]) * int(args[2])
-            self.piano_frame.place_configure(y=self.piano_frame.winfo_y() - delta)
-
     def _on_horizontal_scroll(self, *args):
         """Synchronize horizontal scrolling between timeline and canvas."""
         self.canvas.xview(*args)
@@ -368,7 +403,7 @@ class PianoRoll(tk.Frame):
         old_grid_size = self.grid_size
         self.grid_size = min(64, int(self.grid_size * 1.2))
         if old_grid_size != self.grid_size:
-            self.create_piano_keyboard()
+            self.create_keyboard_layout()  # Changed from create_piano_keyboard
             self.redraw()
 
     def zoom_out(self, event=None):
@@ -376,7 +411,44 @@ class PianoRoll(tk.Frame):
         old_grid_size = self.grid_size
         self.grid_size = max(16, int(self.grid_size / 1.2))
         if old_grid_size != self.grid_size:
-            self.create_piano_keyboard()
+            self.create_keyboard_layout()  # Changed from create_piano_keyboard
+            self.redraw()
+
+    def zoom_at_point(self, x, y, factor):
+        """Zoom centered on a specific point."""
+        # Store old grid size
+        old_grid_size = self.grid_size
+
+        # Calculate new grid size (ensure integer values)
+        new_grid_size = int(min(64, max(16, self.grid_size * factor)))
+
+        if new_grid_size != old_grid_size:
+            # Calculate zoom center in grid coordinates
+            canvas_width = self.canvas.winfo_width()
+            canvas_height = self.canvas.winfo_height()
+
+            # Convert viewport coordinates to canvas coordinates
+            canvas_x = x + self.canvas.canvasx(0)
+            canvas_y = y + self.canvas.canvasy(0)
+
+            # Calculate the scaling factors
+            scale_x = new_grid_size / old_grid_size
+            scale_y = new_grid_size / old_grid_size
+
+            # Update grid size
+            self.grid_size = new_grid_size
+
+            # Update keyboard layout
+            self.create_keyboard_layout()  # Changed from create_piano_keyboard
+
+            # Calculate new scroll position
+            new_x = canvas_x * scale_x - x
+            new_y = canvas_y * scale_y - y
+
+            # Update scroll position
+            self.canvas.xview_moveto(new_x / (canvas_width * scale_x))
+            self.canvas.yview_moveto(new_y / (canvas_height * scale_y))
+
             self.redraw()
 
     def toggle_playback(self):
@@ -796,43 +868,6 @@ class PianoRoll(tk.Frame):
                     self.canvas.yview_scroll(-1, 'units')
                 else:
                     self.canvas.yview_scroll(1, 'units')
-
-    def zoom_at_point(self, x, y, factor):
-        """Zoom centered on a specific point."""
-        # Store old grid size
-        old_grid_size = self.grid_size
-
-        # Calculate new grid size (ensure integer values)
-        new_grid_size = int(min(64, max(16, self.grid_size * factor)))
-
-        if new_grid_size != old_grid_size:
-            # Calculate zoom center in grid coordinates
-            canvas_width = self.canvas.winfo_width()
-            canvas_height = self.canvas.winfo_height()
-
-            # Convert viewport coordinates to canvas coordinates
-            canvas_x = x + self.canvas.canvasx(0)
-            canvas_y = y + self.canvas.canvasy(0)
-
-            # Calculate the scaling factors
-            scale_x = new_grid_size / old_grid_size
-            scale_y = new_grid_size / old_grid_size
-
-            # Update grid size
-            self.grid_size = new_grid_size
-
-            # Update piano keyboard
-            self.create_piano_keyboard()
-
-            # Calculate new scroll position
-            new_x = canvas_x * scale_x - x
-            new_y = canvas_y * scale_y - y
-
-            # Update scroll position
-            self.canvas.xview_moveto(new_x / (canvas_width * scale_x))
-            self.canvas.yview_moveto(new_y / (canvas_height * scale_y))
-
-            self.redraw()
 
     def move_selected_note(self, dx=0, dy=0):
         """Move selected note by grid units."""
